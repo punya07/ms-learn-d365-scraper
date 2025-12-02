@@ -1,0 +1,81 @@
+name: Scrape D365 Documentation
+
+on:
+  # Trigger via API endpoint
+  repository_dispatch:
+    types: [scrape-docs]
+  
+  # Keep manual trigger option in GitHub UI
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Start server in background
+        run: |
+          node server.js > server.log 2>&1 &
+          echo $! > server.pid
+          sleep 5
+      
+      - name: Wait for server to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -f http://localhost:3000/health 2>/dev/null || curl -f http://localhost:3000 2>/dev/null; then
+              echo "Server is ready!"
+              break
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+      
+      - name: Trigger scraping
+        run: |
+          curl -v http://localhost:3000/scrape-all -o d365-docs-$(date +%Y%m%d).csv
+          
+      - name: Check results
+        run: |
+          if [ -f d365-docs-$(date +%Y%m%d).csv ]; then
+            echo "✅ CSV file created successfully"
+            wc -l d365-docs-$(date +%Y%m%d).csv
+            head -n 5 d365-docs-$(date +%Y%m%d).csv
+          else
+            echo "❌ CSV file not created"
+            exit 1
+          fi
+      
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || true
+          fi
+          pkill -f "node server.js" || true
+      
+      - name: Upload CSV as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: d365-docs-${{ github.run_number }}
+          path: d365-docs-*.csv
+          retention-days: 90
+      
+      - name: Commit results to repository
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add d365-docs-*.csv
+          git commit -m "📊 Update D365 docs scrape - $(date +%Y-%m-%d)" || echo "No changes to commit"
+          git push || echo "Nothing to push"
