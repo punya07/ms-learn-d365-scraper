@@ -67,29 +67,22 @@ jobs:
           path: latest-scrape.csv
           retention-days: 90
 
-      - name: Copy CSV into repo
-        run: |
-          echo "Copying CSV into repository workspace..."
-          cp latest-scrape.csv $GITHUB_WORKSPACE/latest-scrape.csv
-          echo "Listing workspace after copy:"
-          ls -la $GITHUB_WORKSPACE
-
       - name: Commit latest CSV to repo
         run: |
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "actions@github.com"
 
-          # Ensure we are on correct branch
+          # Ensure correct branch
           git checkout ${{ github.ref_name }}
 
-          # Stage the CSV
+          # Stage CSV
           git add latest-scrape.csv
 
-          # Attempt commit
+          # Commit if changed
           git commit -m "Update latest scrape $(date)" || echo "No changes to commit"
 
-          # Rebase to avoid conflicts
+          # Avoid conflicts
           git pull --rebase || true
 
-          # Push to repo
+          # Push the commit
           git push || echo "Nothing to push"
